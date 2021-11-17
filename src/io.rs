@@ -95,43 +95,47 @@ impl ZkIo {
         ping_timeout_duration: Duration,
         watch_sender: mpsc::Sender<WatchMessage>,
         state_listeners: ListenerSet<ZkState>
-    ) -> ZkIo {
+    ) -> Option<ZkIo> {
         trace!("ZkIo::new");
         let timeout_ms = ping_timeout_duration.as_secs() * 1000 +
             ping_timeout_duration.subsec_nanos() as u64 / 1000000;
         let (tx, rx) = channel();
 
-        let mut zkio = ZkIo {
-            sock: TcpStream::connect(&addrs[0]).unwrap(), // TODO I need a socket here, sorry.
-            state: ZkState::Connecting,
-            hosts: Hosts::new(addrs),
-            buffer: VecDeque::new(),
-            inflight: VecDeque::new(),
-            // TODO server reads max up to 1MB, otherwise drops the connection,
-            // size should be 1MB + tcp rcvBufsize
-            response: BytesMut::with_capacity(1024 * 1024 * 2),
-            ping_timeout: None,
-            conn_timeout: None,
-            ping_timeout_duration: ping_timeout_duration,
-            conn_timeout_duration: Duration::from_secs(2),
-            timeout_ms: timeout_ms,
-            watch_sender: watch_sender,
-            conn_resp: ConnectResponse::initial(timeout_ms),
-            zxid: 0,
-            ping_sent: Instant::now(),
-            state_listeners: state_listeners,
-            // TODO add error handling to this method in subsequent commit.
-            // There's already another unwrap which needs to be addressed.
-            poll: Poll::new().unwrap(),
-            shutdown: false,
-            timer: Timer::default(),
-            tx: tx,
-            rx: rx,
-        };
-
-        let request = zkio.connect_request();
-        zkio.buffer.push_back(request);
-        zkio
+        if let Ok(sock) = TcpStream::connect(&addrs[0]){
+            let mut zkio = ZkIo {
+                sock: sock, // TODO I need a socket here, sorry.
+                state: ZkState::Connecting,
+                hosts: Hosts::new(addrs),
+                buffer: VecDeque::new(),
+                inflight: VecDeque::new(),
+                // TODO server reads max up to 1MB, otherwise drops the connection,
+                // size should be 1MB + tcp rcvBufsize
+                response: BytesMut::with_capacity(1024 * 1024 * 2),
+                ping_timeout: None,
+                conn_timeout: None,
+                ping_timeout_duration: ping_timeout_duration,
+                conn_timeout_duration: Duration::from_secs(2),
+                timeout_ms: timeout_ms,
+                watch_sender: watch_sender,
+                conn_resp: ConnectResponse::initial(timeout_ms),
+                zxid: 0,
+                ping_sent: Instant::now(),
+                state_listeners: state_listeners,
+                // TODO add error handling to this method in subsequent commit.
+                // There's already another unwrap which needs to be addressed.
+                poll: Poll::new().unwrap(),
+                shutdown: false,
+                timer: Timer::default(),
+                tx: tx,
+                rx: rx,
+            };
+    
+            let request = zkio.connect_request();
+            zkio.buffer.push_back(request);
+            Some(zkio)
+        }else{
+            None
+        }
     }
 
     fn reregister(&mut self, interest: Ready) {
